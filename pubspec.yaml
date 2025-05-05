@@ -1,0 +1,45 @@
+name: cybersafe
+description: A Flutter project for phishing detection and cybersecurity.
+
+environment:
+  sdk: '^3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Firebase dependencies
+  firebase_core: ^2.16.0
+  firebase_auth: ^4.6.3
+  cloud_firestore: ^4.5.0
+  google_sign_in: ^6.2.0
+  # Storage and utilities
+  shared_preferences: ^2.1.0
+  sqflite: ^2.2.8
+  path_provider: ^2.0.14
+  # HTTP client for Safe Browsing API
+  http: ^1.1.0
+  # Notifications
+  flutter_local_notifications: ^12.0.4
+  # Background tasks
+  workmanager: ^0.5.0
+  # UI icons
+  cupertino_icons: ^1.0.5
+  # URL launcher for opening apps
+  url_launcher: ^6.1.7
+  # Sharing intent for app content
+  receive_sharing_intent: ^1.8.1
+  # Permissions for clipboard
+  permission_handler: ^10.2.0  
+  # Clipboard access
+  clipboard: ^0.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/logo.png

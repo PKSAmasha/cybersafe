@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "707709987531",
+    "project_id": "cybersafe-f366a",
+    "storage_bucket": "cybersafe-f366a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:707709987531:android:f9c84e0a29d5233f6c094e",
+        "android_client_info": {
+          "package_name": "com.example.mobile_psh"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBD-mXHpCXlqbHHsHpGJq4TrIlEK_8c2lc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
