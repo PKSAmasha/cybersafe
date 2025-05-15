@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ScanHistoryPage extends StatefulWidget {
   @override
@@ -16,32 +16,30 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
     _loadScanHistory();
   }
 
-  Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
-    final path = '${directory.path}/scan_history.db';
-    return await openDatabase(path, version: 1, onCreate: (db, version) async {
-      await db.execute('''
-        CREATE TABLE scans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          url TEXT,
-          result TEXT,
-          timestamp TEXT
-        )
-      ''');
-    });
-  }
-
   Future<void> _loadScanHistory() async {
     try {
-      final db = await _initDatabase();
-      final List<Map<String, dynamic>> scans = await db.query(
-        'scans',
-        where: 'LOWER(result) = ?',
-        whereArgs: ['phishing'],
-        orderBy: 'timestamp DESC',
-      );
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to view scan history')),
+        );
+        return;
+      }
+
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('scans')
+          .doc(user.uid)
+          .collection('scanHistory')
+          .orderBy('timestamp', descending: true)
+          .get();
+
       setState(() {
-        scanHistory = scans;
+        scanHistory = querySnapshot.docs
+            .map((doc) => {
+                  'id': doc.id,
+                  ...doc.data(),
+                })
+            .toList();
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -51,12 +49,36 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
   }
 
   Future<void> _clearHistory() async {
-    final db = await _initDatabase();
-    await db.delete('scans');
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Scan history cleared')),
-    );
-    _loadScanHistory(); // Reload to reflect the cleared state
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please sign in to clear scan history')),
+        );
+        return;
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('scans')
+          .doc(user.uid)
+          .collection('scanHistory')
+          .get();
+
+      for (var doc in querySnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Scan history cleared')),
+      );
+      _loadScanHistory(); // Reload to reflect the cleared state
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to clear scan history: $e')),
+      );
+    }
   }
 
   @override
@@ -112,7 +134,7 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
               itemBuilder: (context, index) {
                 final history = scanHistory[index];
                 final isThreat =
-                    history['result'].toString().toLowerCase() == 'phishing';
+                    history['result']?.toString().toLowerCase() == 'phishing';
                 return Card(
                   margin: const EdgeInsets.all(8.0),
                   elevation: 4,
@@ -138,6 +160,10 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
                           ),
                         ),
                         Text(
+                          'App: ${history['appSource'] ?? 'Unknown App'}',
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                        Text(
                           'Date: ${history['timestamp'] ?? 'No date'}',
                           style: const TextStyle(color: Colors.grey),
                         ),
@@ -145,7 +171,6 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
                     ),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () {
-                      // Detailed view placeholder
                       showDialog(
                         context: context,
                         builder: (context) => AlertDialog(
@@ -157,6 +182,8 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
                               Text('URL: ${history['url'] ?? 'Unknown'}'),
                               Text(
                                   'Result: ${history['result'] ?? 'No result'}'),
+                              Text(
+                                  'App: ${history['appSource'] ?? 'Unknown App'}'),
                               Text(
                                   'Date: ${history['timestamp'] ?? 'No date'}'),
                             ],

@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'home.dart';
 import 'info.dart';
-import 'login.dart';
+import 'login.dart' as login;
 import 'scanh.dart';
 
 void main() async {
@@ -63,7 +63,7 @@ class AuthWrapper extends StatelessWidget {
         if (snapshot.hasData) {
           return MainPage();
         } else {
-          return const LoginPage();
+          return const login.LoginPage();
         }
       },
     );

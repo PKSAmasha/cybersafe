@@ -1,21 +1,58 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:clipboard/clipboard.dart';
-import 'package:flutter/services.dart'; // Import this for Clipboard
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'settings.dart';
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
+
+class AuthWrapper extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasData) {
+          return HomePage();
+        } else {
+          return LoginPage();
+        }
+      },
+    );
+  }
+}
+
+class LoginPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Login')),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () async {
+            // Implement Firebase login (e.g., email/password or Google Sign-In)
+          },
+          child: Text('Login'),
+        ),
+      ),
+    );
+  }
+}
 
 class HomePage extends StatefulWidget {
   @override
@@ -24,16 +61,12 @@ class HomePage extends StatefulWidget {
 
 class HomePageState extends State<HomePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  static const String _apiKey = 'AIzaSyDJphM5hy_n8XDBirZLYBeI1fQytZA-V8Y';
-  Database? _database;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   void initState() {
     super.initState();
     _initializeNotifications();
-    _initDatabase().then((db) {
-      _database = db;
-    });
     _scheduleBackgroundScan();
   }
 
@@ -57,21 +90,6 @@ class HomePageState extends State<HomePage> {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
-  }
-
-  Future<Database> _initDatabase() async {
-    final directory = await getApplicationDocumentsDirectory();
-    final path = '${directory.path}/scan_history.db';
-    return await openDatabase(path, version: 1, onCreate: (db, version) async {
-      await db.execute('''
-        CREATE TABLE scans (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          url TEXT,
-          result TEXT,
-          timestamp TEXT
-        )
-      ''');
-    });
   }
 
   void _scheduleBackgroundScan() {
@@ -117,22 +135,24 @@ class HomePageState extends State<HomePage> {
   }
 
   static Future<void> _saveScanResult(String url, String result) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final path = '${directory.path}/scan_history.db';
-    final db = await openDatabase(path);
-    await db.insert('scans', {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('scans')
+        .add({
       'url': url,
       'result': result,
       'timestamp': DateTime.now().toIso8601String(),
     });
-    await db.close();
   }
 
   static Future<Map<String, dynamic>> scanUrl(String url) async {
     final safeBrowsingResult = await scanUrlWithSafeBrowsing(url);
     final checkPhishResult = await scanUrlWithCheckPhish(url);
-
-    bool isPhishing =
+    final bool isPhishing =
         safeBrowsingResult['isPhishing'] || checkPhishResult['isPhishing'];
     String details;
     if (isPhishing) {
@@ -156,6 +176,7 @@ class HomePageState extends State<HomePage> {
 
   static Future<Map<String, dynamic>> scanUrlWithSafeBrowsing(
       String url) async {
+    final String apiKey = dotenv.env['SAFE_BROWSING_API_KEY'] ?? '';
     final requestBody = {
       "client": {"clientId": "cybersafeapp", "clientVersion": "1.0.0"},
       "threatInfo": {
@@ -177,7 +198,7 @@ class HomePageState extends State<HomePage> {
       final response = await http
           .post(
         Uri.parse(
-            'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=$_apiKey'),
+            'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=$apiKey'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(requestBody),
       )
@@ -213,8 +234,7 @@ class HomePageState extends State<HomePage> {
   }
 
   static Future<Map<String, dynamic>> scanUrlWithCheckPhish(String url) async {
-    const String checkPhishApiKey =
-        'cctv5vfjy1guzhpflkn6qbu0mi5ccsqs5k48tfnr49c09pvw78y4z30a1jgy5xwi';
+    final String checkPhishApiKey = dotenv.env['CHECK_PHISH_API_KEY'] ?? '';
     const String checkPhishUrl = 'https://api.checkphish.ai/v1/scan';
 
     try {
@@ -386,16 +406,18 @@ class HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    User? user = FirebaseAuth.instance.currentUser;
     return Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
-            Image.asset('assets/images/logo.png', height: 40,
-                errorBuilder: (context, error, stackTrace) {
-              return Icon(Icons.security, size: 40);
-            }),
-            const SizedBox(width: 10),
-            const Text("CyberSafe"),
+            Image.asset(
+              'assets/images/logo.png',
+              height: 40,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(Icons.security, size: 40);
+              },
+            ),
           ],
         ),
         backgroundColor: const Color(0xFF001F3F),
@@ -411,12 +433,12 @@ class HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: HomeContentPage(),
+      body: HomeContentPageDuplicate(),
     );
   }
 }
 
-class HomeContentPage extends StatelessWidget {
+class HomeContentPageDuplicate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     User? user = FirebaseAuth.instance.currentUser;
@@ -426,28 +448,112 @@ class HomeContentPage extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (user != null)
-            Text(
-              'Hello, ${user.email}',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF001F3F),
-              ),
+          Text(
+            user != null ? 'Welcome, ${user.email}' : 'Welcome, Guest',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF001F3F),
             ),
+          ),
+          const SizedBox(height: 20),
+          TipCard(),
           const SizedBox(height: 20),
           QuickScanCard(),
           const SizedBox(height: 20),
           AppScanCard(),
           const SizedBox(height: 20),
           SecuritySnapshot(),
-          const SizedBox(height: 20),
-          Placeholder(
-            fallbackHeight: 100,
-            fallbackWidth: double.infinity,
-            color: Colors.grey,
-          ),
         ],
+      ),
+    );
+  }
+}
+
+class TipCard extends StatefulWidget {
+  @override
+  _TipCardState createState() => _TipCardState();
+}
+
+class _TipCardState extends State<TipCard> {
+  final List<Map<String, dynamic>> _tips = [
+    {'text': 'Always verify email addresses', 'icon': Icons.email},
+    {'text': 'Don\'t click on suspicious links', 'icon': Icons.link},
+    {'text': 'Use two-factor authentication', 'icon': Icons.security},
+    {'text': 'Be cautious with personal information', 'icon': Icons.info},
+    {
+      'text': 'Check for grammar and spelling errors',
+      'icon': Icons.text_fields,
+    },
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Colors.white,
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text(
+              'Cybersecurity Tip',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 10),
+            CarouselSlider(
+              options: CarouselOptions(
+                height: 100,
+                autoPlay: true,
+                autoPlayInterval: Duration(seconds: 5),
+                enlargeCenterPage: true,
+                aspectRatio: 2.0,
+                viewportFraction: 0.9,
+              ),
+              items: _tips.map((tip) {
+                return Builder(
+                  builder: (BuildContext context) {
+                    return Container(
+                      width: MediaQuery.of(context).size.width,
+                      margin: EdgeInsets.symmetric(horizontal: 5.0),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            tip['icon'],
+                            color: Colors.blue,
+                            size: 30,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              tip['text'],
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.black87,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -607,7 +713,6 @@ class _AppScanCardState extends State<AppScanCard> {
   @override
   void initState() {
     super.initState();
-    // Listen for shared content
     _intentDataStreamSubscription =
         ReceiveSharingIntent.instance.getMediaStream().listen(
       (List<SharedMediaFile> value) {
@@ -624,7 +729,6 @@ class _AppScanCardState extends State<AppScanCard> {
       },
     );
 
-    // Check initial shared content
     ReceiveSharingIntent.instance
         .getInitialMedia()
         .then((List<SharedMediaFile> value) {
@@ -633,7 +737,6 @@ class _AppScanCardState extends State<AppScanCard> {
       }
     });
 
-    // Start clipboard monitoring
     _startClipboardMonitoring();
   }
 
@@ -651,7 +754,6 @@ class _AppScanCardState extends State<AppScanCard> {
       _indicator = 'In Progress';
     });
 
-    // Extract URLs from content
     final urlRegExp = RegExp(
       r'https?://[^\s]+',
       caseSensitive: false,
@@ -803,7 +905,7 @@ class SecuritySnapshot extends StatefulWidget {
 class _SecuritySnapshotState extends State<SecuritySnapshot> {
   int totalScans = 0;
   int threatsDetected = 0;
-  String securityStatus = "Safe";
+  String securityStatus = "Secure"; // Changed initial value to "Secure"
 
   Future<void> performScan() async {
     setState(() {
@@ -811,15 +913,16 @@ class _SecuritySnapshotState extends State<SecuritySnapshot> {
     });
 
     final mockUrls = [
-      "http://testsafebrowsing.appspot.com/s/phishing.html",
-      "https://example.com",
+      "http://testsafebrowsing.appspot.com/s/phishing.html", // Known phishing URL
+      "https://example.com", // Known safe URL
     ];
 
     bool threatFound = false;
 
     for (var url in mockUrls) {
       final result = await HomePageState.scanUrl(url);
-      if (result['isPhishing']) {
+      print('Scan result for $url: $result'); // Debug log
+      if (result['isPhishing'] == true) {
         threatFound = true;
         threatsDetected++;
         await HomePageState._showEmergencyNotification(url);
@@ -831,6 +934,7 @@ class _SecuritySnapshotState extends State<SecuritySnapshot> {
 
     setState(() {
       securityStatus = threatFound ? "At Risk" : "Secure";
+      print('Security Status updated to: $securityStatus'); // Debug log
     });
 
     if (threatFound) {
@@ -842,6 +946,8 @@ class _SecuritySnapshotState extends State<SecuritySnapshot> {
 
   @override
   Widget build(BuildContext context) {
+    print(
+        'Building SecuritySnapshot with status: $securityStatus'); // Debug log
     return Card(
       color: Colors.white,
       elevation: 4,

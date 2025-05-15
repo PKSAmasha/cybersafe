@@ -33,6 +33,9 @@ dependencies:
   permission_handler: ^10.2.0  
   # Clipboard access
   clipboard: ^0.1.3
+  carousel_slider: ^5.0.0
+  flutter_dotenv: ^5.2.1
+  
 
 dev_dependencies:
   flutter_test:
